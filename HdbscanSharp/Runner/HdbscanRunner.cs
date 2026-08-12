@@ -1,4 +1,5 @@
 ﻿using HdbscanSharp.Hdbscanstar;
+using HdbscanSharp.Prediction;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -79,6 +80,17 @@ namespace HdbscanSharp.Runner
                 OutliersScore = outliersScore,
                 HasInfiniteStability = result.HasInfiniteStability
             };
+        }
+
+        public static PredictionData BuildPredictionData(
+            double[][] trainingData,
+            int minPoints,
+            int minClusterSize,
+            Func<int, int, double> distanceFunc,
+            List<HdbscanConstraint> constraints = null)
+        {
+            return ApproximatePredict.BuildPredictionData(
+                trainingData, minPoints, minClusterSize, distanceFunc, constraints);
         }
 
         public static HdbscanResult Run(
