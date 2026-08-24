@@ -270,6 +270,7 @@ namespace HdbscanSharp.Prediction
         public static (string label, double score, string decision) PredictDocument(
             PredictionData data,
             double[][] chunkEmbeddings,
+            IReadOnlyDictionary<string, string>? categoryMap = null,
             double autoAcceptThreshold = 0.95,
             double underReviewThreshold = 0.70,
             Action<string>? trace = null)
@@ -277,15 +278,21 @@ namespace HdbscanSharp.Prediction
             trace?.Invoke($"PredictDocument: {chunkEmbeddings.Length} chunks, autoAcceptThreshold={autoAcceptThreshold}, underReviewThreshold={underReviewThreshold}");
             var (labels, probs) = Predict(data, chunkEmbeddings, trace);
 
-            var evidence = new Dictionary<int, double>();
+            // Resolve a cluster label to its category. Without a category map, every cluster label is its own category (previous behavior).
+            string ResolveCategory(int clusterLabel)
+                => categoryMap is not null && categoryMap.TryGetValue(clusterLabel.ToString(), out var mapped)
+                    ? mapped
+                    : clusterLabel.ToString();
+
+            // Aggregate evidence across all clusters that belong to the same category so a
+            // document whose chunks land in different sub-clusters of one category is not diluted.
+            var evidence = new Dictionary<string, double>();
             for (int i = 0; i < labels.Length; i++)
             {
-                if (labels[i] >= 0)
-                {
-                    if (!evidence.TryGetValue(labels[i], out var existing))
-                        existing = 0;
-                    evidence[labels[i]] = existing + probs[i];
-                }
+                if (labels[i] < 0)
+                    continue;
+                var category = ResolveCategory(labels[i]);
+                evidence[category] = (evidence.TryGetValue(category, out var existing) ? existing : 0) + probs[i];
             }
 
             if (evidence.Count == 0)
@@ -297,8 +304,8 @@ namespace HdbscanSharp.Prediction
             var winner = evidence.OrderByDescending(kv => kv.Value).First();
             var score = winner.Value / chunkEmbeddings.Length;
 
-            trace?.Invoke($"PredictDocument: evidence=[{string.Join(", ", evidence.Select(kv => $"{kv.Key}:{kv.Value:G4}"))}]");
-            trace?.Invoke($"PredictDocument: winner=clusterLabel {winner.Key}, evidenceSum={winner.Value:G4}, score={score:G4}");
+            trace?.Invoke($"PredictDocument: categoryEvidence=[{string.Join(", ", evidence.Select(kv => $"{kv.Key}:{kv.Value:G4}"))}]");
+            trace?.Invoke($"PredictDocument: winner=category {winner.Key}, evidenceSum={winner.Value:G4}, score={score:G4}");
 
             string decision;
             string label;
@@ -310,13 +317,13 @@ namespace HdbscanSharp.Prediction
             }
             else if (score >= autoAcceptThreshold)
             {
-                label = winner.Key.ToString();
+                label = winner.Key;
                 decision = "auto_classified";
                 trace?.Invoke($"PredictDocument: score >= {autoAcceptThreshold} -> label={label}, auto_classified");
             }
             else
             {
-                label = winner.Key.ToString();
+                label = winner.Key;
                 decision = "under_review";
                 trace?.Invoke($"PredictDocument: score in [{underReviewThreshold}, {autoAcceptThreshold}) -> label={label}, under_review");
             }
