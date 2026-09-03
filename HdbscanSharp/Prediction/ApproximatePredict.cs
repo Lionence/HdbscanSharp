@@ -374,23 +374,31 @@ namespace HdbscanSharp.Prediction
             for (int p = 0; p < chunkEmbeddings.Length; p++)
             {
                 var point = chunkEmbeddings[p];
-                var neighborIndices = Enumerable.Range(0, data.RawData.Length)
-                    .OrderBy(i => CosineDistance(point, data.RawData[i]))
+                var neighborIdxAndDist = Enumerable.Range(0, data.RawData.Length)
+                    .Select(i => (Index: i, Distance: CosineDistance(point, data.RawData[i])))
+                    .OrderBy(n => n.Distance)
                     .Take(Math.Min(neighborCount, data.RawData.Length))
                     .ToArray();
 
                 var votes = new Dictionary<string, int>(StringComparer.Ordinal);
-                foreach (var idx in neighborIndices)
+                var similarityByCategory = new Dictionary<string, double>(StringComparer.Ordinal);
+                foreach (var (idx, distance) in neighborIdxAndDist)
                 {
                     var category = resolvedCategories[idx];
                     votes[category] = votes.TryGetValue(category, out var count) ? count + 1 : 1;
+                    similarityByCategory[category] = similarityByCategory.TryGetValue(category, out var sim) ? sim + (1.0 - distance) : 1.0 - distance;
                 }
 
                 var winner = votes.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First();
-                var weight = (double)winner.Value / Math.Min(neighborCount, data.RawData.Length);
+                // Similarity-weighted confidence: fraction of agreeing neighbors times how close
+                // those neighbors are. Only a chunk whose top-k neighbors all agree AND are
+                // near-identical to the training point approaches 1.0.
+                var winnerVoteFraction = (double)winner.Value / Math.Min(neighborCount, data.RawData.Length);
+                var winnerAvgSimilarity = similarityByCategory[winner.Key] / winner.Value;
+                var weight = winnerVoteFraction * winnerAvgSimilarity;
                 evidence[winner.Key] = evidence.TryGetValue(winner.Key, out var existingEvidence) ? existingEvidence + weight : weight;
                 chunkWinner.Add((winner.Key, weight));
-                trace?.Invoke($"  chunk[{p}]: kNN votes=[{string.Join(", ", votes.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}:{kv.Value}"))}] winner={winner.Key} weight={weight:G4}");
+                trace?.Invoke($"  chunk[{p}]: kNN votes=[{string.Join(", ", votes.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}:{kv.Value}"))}] winner={winner.Key} voteFraction={winnerVoteFraction:G4} avgSim={winnerAvgSimilarity:G4} weight={weight:G4}");
             }
 
             if (evidence.Count == 0)
