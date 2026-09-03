@@ -152,13 +152,14 @@ namespace HdbscanSharp.Prediction
         public static (int[] labels, double[] probabilities) Predict(
             PredictionData data,
             double[][] pointsToPredict,
-            Action<string>? trace = null)
+            Action<string>? trace = null,
+            int neighborCount = 15)
         {
             var numPoints = pointsToPredict.Length;
             var labels = new int[numPoints];
             var probabilities = new double[numPoints];
             var minSamples = data.MinSamples;
-            var k = 15;
+            var k = neighborCount;
 
             var clusterTreeLookup = new Dictionary<int, (int parent, double lambdaVal)>();
             for (int i = 0; i < data.ClusterTreeChild.Length; i++)
@@ -273,10 +274,11 @@ namespace HdbscanSharp.Prediction
             IReadOnlyDictionary<string, string>? categoryMap = null,
             double autoAcceptThreshold = 0.95,
             double underReviewThreshold = 0.70,
-            Action<string>? trace = null)
+            Action<string>? trace = null,
+            int neighborCount = 15)
         {
             trace?.Invoke($"PredictDocument: {chunkEmbeddings.Length} chunks, autoAcceptThreshold={autoAcceptThreshold}, underReviewThreshold={underReviewThreshold}");
-            var (labels, probs) = Predict(data, chunkEmbeddings, trace);
+            var (labels, probs) = Predict(data, chunkEmbeddings, trace, neighborCount);
 
             // Resolve a cluster label to its category. Without a category map, every cluster label is its own category (previous behavior).
             string ResolveCategory(int clusterLabel)
@@ -329,6 +331,98 @@ namespace HdbscanSharp.Prediction
             }
 
             return (label, score, decision);
+        }
+
+        public static (string label, double score, string decision) PredictKnn(
+            PredictionData data,
+            double[][] chunkEmbeddings,
+            IReadOnlyDictionary<string, string>? categoryMap = null,
+            int neighborCount = 5,
+            double autoAcceptThreshold = 0.95,
+            double underReviewThreshold = 0.70,
+            IReadOnlyList<string>? vectorCategories = null,
+            Action<string>? trace = null)
+        {
+            trace?.Invoke($"PredictKnn: {chunkEmbeddings.Length} chunks, neighborCount={neighborCount}, autoAcceptThreshold={autoAcceptThreshold}, underReviewThreshold={underReviewThreshold}");
+
+            // Resolve each training vector's category. When explicit per-vector categories are
+            // provided (production stores them at build time), use them directly; otherwise derive
+            // via internal label -> cluster map -> category.
+            var resolvedCategories = new string[data.RawData.Length];
+            for (int i = 0; i < data.RawData.Length; i++)
+            {
+                if (vectorCategories is not null && i < vectorCategories.Count && !string.IsNullOrEmpty(vectorCategories[i]))
+                {
+                    resolvedCategories[i] = vectorCategories[i];
+                    continue;
+                }
+
+                var internalLabel = data.Labels[i];
+                if (data.ClusterMap.TryGetValue(internalLabel, out var finalLabel) && finalLabel >= 0 &&
+                    categoryMap is not null && categoryMap.TryGetValue(finalLabel.ToString(), out var mapped))
+                {
+                    resolvedCategories[i] = mapped;
+                }
+                else
+                {
+                    resolvedCategories[i] = internalLabel.ToString();
+                }
+            }
+
+            var evidence = new Dictionary<string, double>(StringComparer.Ordinal);
+            var chunkWinner = new List<(string Category, double Weight)>();
+            for (int p = 0; p < chunkEmbeddings.Length; p++)
+            {
+                var point = chunkEmbeddings[p];
+                var neighborIndices = Enumerable.Range(0, data.RawData.Length)
+                    .OrderBy(i => CosineDistance(point, data.RawData[i]))
+                    .Take(Math.Min(neighborCount, data.RawData.Length))
+                    .ToArray();
+
+                var votes = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var idx in neighborIndices)
+                {
+                    var category = resolvedCategories[idx];
+                    votes[category] = votes.TryGetValue(category, out var count) ? count + 1 : 1;
+                }
+
+                var winner = votes.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First();
+                var weight = (double)winner.Value / Math.Min(neighborCount, data.RawData.Length);
+                evidence[winner.Key] = evidence.TryGetValue(winner.Key, out var existingEvidence) ? existingEvidence + weight : weight;
+                chunkWinner.Add((winner.Key, weight));
+                trace?.Invoke($"  chunk[{p}]: kNN votes=[{string.Join(", ", votes.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}:{kv.Value}"))}] winner={winner.Key} weight={weight:G4}");
+            }
+
+            if (evidence.Count == 0)
+            {
+                trace?.Invoke("PredictKnn: evidence is empty -> returning (-1, 1.0, under_review)");
+                return ("-1", 1.0, "under_review");
+            }
+
+            var winnerCategory = evidence.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First();
+            var score = winnerCategory.Value / chunkEmbeddings.Length;
+
+            trace?.Invoke($"PredictKnn: categoryEvidence=[{string.Join(", ", evidence.Select(kv => $"{kv.Key}:{kv.Value:G4}"))}]");
+            trace?.Invoke($"PredictKnn: winner=category {winnerCategory.Key}, evidenceSum={winnerCategory.Value:G4}, score={score:G4}");
+
+            string decision;
+            if (score < underReviewThreshold)
+            {
+                decision = "under_review";
+                trace?.Invoke($"PredictKnn: score < {underReviewThreshold} -> under_review");
+            }
+            else if (score >= autoAcceptThreshold)
+            {
+                decision = "auto_classified";
+                trace?.Invoke($"PredictKnn: score >= {autoAcceptThreshold} -> auto_classified");
+            }
+            else
+            {
+                decision = "under_review";
+                trace?.Invoke($"PredictKnn: score in [{underReviewThreshold}, {autoAcceptThreshold}) -> under_review");
+            }
+
+            return (winnerCategory.Key, score, decision);
         }
 
         private static double CosineDistance(double[] a, double[] b)
