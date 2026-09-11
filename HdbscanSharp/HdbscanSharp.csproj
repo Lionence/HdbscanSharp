@@ -17,6 +17,7 @@
 		<DelaySign>false</DelaySign>
 		<AssemblyOriginatorKeyFile>HdbscanSharp.snk</AssemblyOriginatorKeyFile>
 		<LangVersion>latest</LangVersion>
+		<NoWarn>CS8625</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Numerics.Tensors" Version="9.0.2" />
