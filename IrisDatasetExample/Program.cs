@@ -1,4 +1,4 @@
-﻿using HdbscanSharp.Distance;
+using HdbscanSharp.Distance;
 using HdbscanSharp.Runner;
 using System;
 using System.Globalization;
@@ -18,12 +18,12 @@ var result = HdbscanRunner.Run(dataset, flower => flower.Vector, 25, 25, Generic
 // Show results:
 foreach (var group in result.Groups)
 {
-	Console.Write("Group #" + group.Key);
+    Console.Write("Group #" + group.Key);
 
-	foreach (var flower in group.Value)
-		Console.Write(" " + flower.Species);
+    foreach (var flower in group.Value)
+        Console.Write(" " + flower.Species);
 
-	Console.WriteLine();
+    Console.WriteLine();
 }
 
 Console.WriteLine();

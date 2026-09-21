@@ -1,4 +1,4 @@
-﻿namespace HdbscanSharp.Distance
+namespace HdbscanSharp.Distance
 {
     public interface ISparseMatrixSupport
     {

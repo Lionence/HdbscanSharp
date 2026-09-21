@@ -1,8 +1,8 @@
-﻿namespace HdbscanSharp.Hdbscanstar
+namespace HdbscanSharp.Hdbscanstar
 {
-	public enum HdbscanConstraintType
+    public enum HdbscanConstraintType
     {
-		MustLink,
-		CannotLink
-	}
+        MustLink,
+        CannotLink
+    }
 }

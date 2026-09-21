@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,9 +51,9 @@ namespace HdbscanSharp.Distance
                 }
             }
         }
-        
+
         public double GetMostCommonDistanceValueForSparseMatrix() => 1;
-        
+
         public double ComputeDistance(int indexOne, int indexTwo, double[] attributesOne, double[] attributesTwo)
         {
             var magnitudeOne = CalculateAndCacheMagnitude(indexOne, attributesOne);

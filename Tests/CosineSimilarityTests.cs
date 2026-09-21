@@ -1,27 +1,27 @@
-﻿using HdbscanSharp.Distance;
+using HdbscanSharp.Distance;
 using HdbscanSharp.Runner;
 using Newtonsoft.Json;
 using Xunit;
 
 namespace Tests
 {
-	public class CosineSimilarityTests
+    public class CosineSimilarityTests
     {
         [Fact]
-		public void TestDistanceIsPositiveEvenIfThereIsRounding()
-		{
-			// See: https://github.com/doxakis/HdbscanSharp/issues/5
+        public void TestDistanceIsPositiveEvenIfThereIsRounding()
+        {
+            // See: https://github.com/doxakis/HdbscanSharp/issues/5
 
-			var a = new double[] { 20 };
-			var b = new double[] { 19.990000000000002 };
+            var a = new double[] { 20 };
+            var b = new double[] { 19.990000000000002 };
 
-			var distFunc = new CosineSimilarity();
-			var distance = distFunc.ComputeDistance(0, 1, a, b);
-			if (distance < 0)
-			{
-				Assert.Fail("Distance must be positive.");
-			}
-		}
+            var distFunc = new CosineSimilarity();
+            var distance = distFunc.ComputeDistance(0, 1, a, b);
+            if (distance < 0)
+            {
+                Assert.Fail("Distance must be positive.");
+            }
+        }
 
         [Fact]
         public void TestDistanceHelpersVsGeneric_ItShouldReturnSameLabels()

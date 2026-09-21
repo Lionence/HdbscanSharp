@@ -1,4 +1,4 @@
-﻿using HdbscanSharp.Hdbscanstar;
+using HdbscanSharp.Hdbscanstar;
 using HdbscanSharp.Prediction;
 using System;
 using System.Collections.Generic;
